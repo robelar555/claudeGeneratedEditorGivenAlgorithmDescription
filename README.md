@@ -50,9 +50,6 @@ Main idea: keep track of what is left of interval, while adding parts of interva
 Remove tag (input : [tag, interval : [start,stop]]):
 --------------
 
-Generated in https://claude.ai/ with following descripton:
-----------
-
 Main idea: keep track of what is left of interval, while "re-hooking" sub-childs to  parent of parent.
 
 1. One must use DFS to find tag containing smallest interval with start position.
