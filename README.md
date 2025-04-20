@@ -1,15 +1,16 @@
 # claudeGeneratedEditorGivenAlgorithmDescription
 
+An editor, created with algorithm description given below
+
+Website
+----
+https://claude.site/artifacts/b3147501-5ebb-4d4f-91c8-601f9b3701ff
 
 Pictures
 -----
 
 ![image](https://github.com/user-attachments/assets/0ca74742-b94d-46c4-a2e9-6b52ef638537)
 
-
-Website
-----
-https://claude.site/artifacts/b3147501-5ebb-4d4f-91c8-601f9b3701ff
 
 
 
