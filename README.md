@@ -1,6 +1,18 @@
 # claudeGeneratedEditorGivenAlgorithmDescription
 
 
+Pictures
+-----
+
+![image](https://github.com/user-attachments/assets/0ca74742-b94d-46c4-a2e9-6b52ef638537)
+
+
+Website
+----
+https://claude.site/artifacts/b3147501-5ebb-4d4f-91c8-601f9b3701ff
+
+
+
 
 Problem statement:
 ------------------
@@ -36,16 +48,6 @@ Main idea: keep track of what is left of interval, while adding parts of interva
 
 Remove tag (input : [tag, interval : [start,stop]]):
 --------------
-
-Pictures
------
-
-![image](https://github.com/user-attachments/assets/0ca74742-b94d-46c4-a2e9-6b52ef638537)
-
-
-Website
-----
-https://claude.site/artifacts/b3147501-5ebb-4d4f-91c8-601f9b3701ff
 
 Generated in https://claude.ai/ with following descripton:
 ----------
