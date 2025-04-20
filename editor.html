@@ -1,0 +1,615 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Tagged Interval Tree Editor</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 20px;
+      max-width: 800px;
+      margin: 0 auto;
+    }
+    .container {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+    textarea {
+      width: 100%;
+      height: 200px;
+      padding: 10px;
+      font-size: 16px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+    }
+    .toolbar {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+    button {
+      padding: 8px 15px;
+      cursor: pointer;
+      background-color: #f0f0f0;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      font-weight: bold;
+    }
+    button:hover {
+      background-color: #e0e0e0;
+    }
+    button.active {
+      background-color: #c0c0c0;
+    }
+    #preview {
+      border: 1px solid #ccc;
+      padding: 15px;
+      min-height: 100px;
+      border-radius: 4px;
+    }
+    .debug {
+      margin-top: 20px;
+      padding: 10px;
+      background-color: #f5f5f5;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      font-family: monospace;
+      white-space: pre-wrap;
+      font-size: 14px;
+      max-height: 300px;
+      overflow-y: auto;
+    }
+    .mode-switch {
+      display: flex;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+    .toggle-switch {
+      position: relative;
+      display: inline-block;
+      width: 60px;
+      height: 34px;
+      margin-right: 10px;
+    }
+    .toggle-switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+    .slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: #ccc;
+      transition: .4s;
+      border-radius: 34px;
+    }
+    .slider:before {
+      position: absolute;
+      content: "";
+      height: 26px;
+      width: 26px;
+      left: 4px;
+      bottom: 4px;
+      background-color: white;
+      transition: .4s;
+      border-radius: 50%;
+    }
+    input:checked + .slider {
+      background-color: #f77;
+    }
+    input:checked + .slider:before {
+      transform: translateX(26px);
+    }
+    .mode-label {
+      font-weight: bold;
+    }
+    .status {
+      margin-top: 10px;
+      padding: 8px;
+      border-radius: 4px;
+      background-color: #f0f0f0;
+      display: none;
+    }
+    .status.active {
+      display: block;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Tagged Interval Tree Editor</h1>
+    
+    <div class="mode-switch">
+      <label class="toggle-switch">
+        <input type="checkbox" id="modeToggle">
+        <span class="slider"></span>
+      </label>
+      <span class="mode-label">Mode: <span id="currentMode">Adding</span></span>
+    </div>
+    
+    <div>
+      <div class="toolbar">
+        <button id="boldBtn" title="Bold"><b>B</b></button>
+        <button id="italicBtn" title="Italic"><i>I</i></button>
+        <button id="underlineBtn" title="Underline"><u>U</u></button>
+      </div>
+      <textarea id="editor">Try selecting some text and applying formatting using the buttons above! You can toggle between Add and Remove mode using the switch.</textarea>
+      <div id="status" class="status"></div>
+    </div>
+    
+    <div>
+      <h3>Preview:</h3>
+      <div id="preview"></div>
+    </div>
+    
+    <div>
+      <h3>Tree Structure:</h3>
+      <div id="treeDebug" class="debug"></div>
+    </div>
+  </div>
+
+  <script>
+    // Tagged Interval Tree Implementation
+    class IntervalNode {
+      constructor(start, end, tag = null) {
+        this.interval = [start, end];
+        this.tag = tag;
+        this.children = [];
+      }
+      
+      toString(indent = 0) {
+        const indentStr = ' '.repeat(indent);
+        let result = `${indentStr}[${this.interval[0]},${this.interval[1]}]`;
+        if (this.tag) {
+          result += ` tag: ${this.tag}`;
+        }
+        result += '\n';
+        
+        for (const child of this.children) {
+          result += child.toString(indent + 2);
+        }
+        return result;
+      }
+    }
+
+    class TaggedIntervalTree {
+      constructor(start = 0, end = 0) {
+        this.root = new IntervalNode(start, end);
+      }
+      
+      // Add a tag to an interval
+      addTag(tag, interval) {
+        const [start, end] = interval;
+        if (start >= end) return; // Invalid interval
+        
+        console.log(`Adding tag ${tag} to interval [${start},${end}]`);
+        this._addTagDFS(this.root, tag, start, end);
+        this._ensureTreeProperties(this.root);
+      }
+      
+      _addTagDFS(node, tag, start, end) {
+        // Make sure we're working within the node's interval
+        start = Math.max(start, node.interval[0]);
+        end = Math.min(end, node.interval[1]);
+        
+        if (start >= end) return null; // No valid interval
+        
+        // If this node has the same tag, we don't need to add it again
+        if (node.tag === tag) return null;
+        
+        // If no children, create a new child with this tag
+        if (node.children.length === 0) {
+          const newNode = new IntervalNode(start, end, tag);
+          node.children.push(newNode);
+          return;
+        }
+        
+        // We need to find where to insert the new tag
+        let insertPoints = [];
+        let currentPos = start;
+        
+        // Check if we need to insert before the first child
+        if (currentPos < node.children[0].interval[0]) {
+          insertPoints.push({
+            index: 0,
+            start: currentPos,
+            end: Math.min(end, node.children[0].interval[0])
+          });
+          currentPos = Math.min(end, node.children[0].interval[0]);
+        }
+        
+        // Go through each child
+        for (let i = 0; i < node.children.length && currentPos < end; i++) {
+          const child = node.children[i];
+          
+          // If current position is before this child's start
+          if (currentPos < child.interval[0]) {
+            // Insert a new node before this child
+            insertPoints.push({
+              index: i,
+              start: currentPos,
+              end: Math.min(end, child.interval[0])
+            });
+            currentPos = Math.min(end, child.interval[0]);
+          }
+          
+          // If current position overlaps with this child
+          if (currentPos < child.interval[1]) {
+            // Recursively add tag to this child
+            this._addTagDFS(child, tag, currentPos, end);
+            currentPos = child.interval[1];
+          }
+          
+          // If there's a gap after this child and before the next
+          const nextChild = node.children[i + 1];
+          if (currentPos < end && nextChild && currentPos < nextChild.interval[0]) {
+            insertPoints.push({
+              index: i + 1,
+              start: currentPos,
+              end: Math.min(end, nextChild.interval[0])
+            });
+            currentPos = Math.min(end, nextChild.interval[0]);
+          }
+        }
+        
+        // If we still have interval left after all children
+        if (currentPos < end) {
+          insertPoints.push({
+            index: node.children.length,
+            start: currentPos,
+            end: end
+          });
+        }
+        
+        // Insert all the new nodes (in reverse order to not mess up indices)
+        for (let i = insertPoints.length - 1; i >= 0; i--) {
+          const point = insertPoints[i];
+          const newNode = new IntervalNode(point.start, point.end, tag);
+          node.children.splice(point.index, 0, newNode);
+        }
+      }
+      
+      // Remove a tag from an interval
+      removeTag(tag, interval) {
+        const [start, end] = interval;
+        if (start >= end) return false; // Invalid interval
+        
+        console.log(`Removing tag ${tag} from interval [${start},${end}]`);
+        const result = this._removeTagDFS(this.root, tag, start, end);
+        this._ensureTreeProperties(this.root);
+        return result.removed;
+      }
+      
+      _removeTagDFS(node, tag, start, end) {
+        // Adjust interval to node boundaries
+        const effectiveStart = Math.max(start, node.interval[0]);
+        const effectiveEnd = Math.min(end, node.interval[1]);
+        
+        if (effectiveStart >= effectiveEnd) {
+          return { removed: false }; // No overlap
+        }
+        
+        let removedAny = false;
+        
+        // Check if this node has the tag to remove
+        if (node.tag === tag) {
+          // Split the node if needed
+          const originalEnd = node.interval[1];
+          const originalStart = node.interval[0];
+          
+          // Case 1: Remove entire node
+          if (effectiveStart <= originalStart && effectiveEnd >= originalEnd) {
+            return { 
+              removed: true,
+              action: 'REMOVE_NODE',
+              children: node.children
+            };
+          }
+          
+          // Case 2: Remove from the beginning
+          if (effectiveStart <= originalStart && effectiveEnd < originalEnd) {
+            node.interval[0] = effectiveEnd;
+            return { removed: true, action: 'ADJUSTED_START' };
+          }
+          
+          // Case 3: Remove from the end
+          if (effectiveStart > originalStart && effectiveEnd >= originalEnd) {
+            node.interval[1] = effectiveStart;
+            return { removed: true, action: 'ADJUSTED_END' };
+          }
+          
+          // Case 4: Remove from the middle (split node)
+          if (effectiveStart > originalStart && effectiveEnd < originalEnd) {
+            // Create a new node for the right part
+            const rightNode = new IntervalNode(effectiveEnd, originalEnd, tag);
+            node.interval[1] = effectiveStart;
+            
+            // Handle children
+            for (let i = 0; i < node.children.length; i++) {
+              const child = node.children[i];
+              // If child is entirely in right part, move it
+              if (child.interval[0] >= effectiveEnd) {
+                rightNode.children.push(child);
+                node.children.splice(i, 1);
+                i--;
+              }
+              // If child overlaps split point, it would need special handling
+              // For simplicity, we'll just leave it with the left node
+            }
+            
+            // Return the split result
+            return { 
+              removed: true,
+              action: 'SPLIT',
+              newRightNode: rightNode
+            };
+          }
+        }
+        
+        // Process children
+        const newChildren = [];
+        const childrenToAdd = [];
+        
+        for (let i = 0; i < node.children.length; i++) {
+          const child = node.children[i];
+          const childResult = this._removeTagDFS(child, tag, start, end);
+          
+          if (childResult.removed) {
+            removedAny = true;
+            
+            if (childResult.action === 'REMOVE_NODE') {
+              // Replace this child with its children
+              childrenToAdd.push(...childResult.children);
+            } else if (childResult.action === 'SPLIT') {
+              // Keep this child and add the new right node
+              newChildren.push(child);
+              childrenToAdd.push(childResult.newRightNode);
+            } else {
+              // Start or end adjusted, keep the child
+              newChildren.push(child);
+            }
+          } else {
+            // No change to this child
+            newChildren.push(child);
+          }
+        }
+        
+        // Update children list
+        node.children = newChildren.concat(childrenToAdd);
+        
+        return { removed: removedAny };
+      }
+      
+      // Ensure tree properties (non-overlapping, sorted, merged, inside parent)
+      _ensureTreeProperties(node) {
+        if (!node || node.children.length === 0) return;
+        
+        // Sort children by start position
+        node.children.sort((a, b) => a.interval[0] - b.interval[0]);
+        
+        // Remove any empty intervals
+        node.children = node.children.filter(child => 
+          child.interval[0] < child.interval[1]);
+        
+        if (node.children.length === 0) return;
+        
+        // Merge adjacent/overlapping nodes with same tag
+        const mergedChildren = [];
+        let current = node.children[0];
+        
+        for (let i = 1; i < node.children.length; i++) {
+          const next = node.children[i];
+          
+          // Same tag and adjacent/overlapping - merge
+          if (current.tag === next.tag && next.interval[0] <= current.interval[1]) {
+            current.interval[1] = Math.max(current.interval[1], next.interval[1]);
+            // Merge children too
+            current.children.push(...next.children);
+          } else {
+            mergedChildren.push(current);
+            current = next;
+          }
+        }
+        
+        mergedChildren.push(current);
+        node.children = mergedChildren;
+        
+        // Process children recursively
+        for (const child of node.children) {
+          this._ensureTreeProperties(child);
+        }
+      }
+      
+      // Check if an interval has a specific tag
+      hasTag(tag, interval) {
+        const [start, end] = interval;
+        return this._checkTagDFS(this.root, tag, start, end);
+      }
+      
+      _checkTagDFS(node, tag, start, end) {
+        // If this node has the tag and fully contains the interval
+        if (node.tag === tag && 
+            node.interval[0] <= start && 
+            node.interval[1] >= end) {
+          return true;
+        }
+        
+        // Check children
+        for (const child of node.children) {
+          // Skip if no overlap
+          if (end <= child.interval[0] || start >= child.interval[1]) {
+            continue;
+          }
+          
+          if (this._checkTagDFS(child, tag, start, end)) {
+            return true;
+          }
+        }
+        
+        return false;
+      }
+      
+      // Get formatted text
+      getFormattedText(text) {
+        // Collect all formatting tags at each position
+        const markers = [];
+        
+        function collectMarkers(node, parentTags = []) {
+          if (node.tag) {
+            // Add opening tag
+            markers.push({
+              position: node.interval[0],
+              tag: node.tag,
+              isOpening: true
+            });
+            
+            // Add closing tag
+            markers.push({
+              position: node.interval[1],
+              tag: node.tag,
+              isOpening: false
+            });
+          }
+          
+          // Process children
+          for (const child of node.children) {
+            collectMarkers(child, node.tag ? [...parentTags, node.tag] : parentTags);
+          }
+        }
+        
+        collectMarkers(this.root);
+        
+        // Sort markers by position (closing tags come before opening tags at same position)
+        markers.sort((a, b) => {
+          if (a.position === b.position) {
+            return a.isOpening ? 1 : -1;
+          }
+          return a.position - b.position;
+        });
+        
+        // Insert tags into text
+        let result = '';
+        let lastPosition = 0;
+        
+        for (const marker of markers) {
+          // Add text up to this marker
+          result += text.substring(lastPosition, marker.position);
+          lastPosition = marker.position;
+          
+          // Add tag
+          if (marker.isOpening) {
+            result += `<${marker.tag}>`;
+          } else {
+            result += `</${marker.tag}>`;
+          }
+        }
+        
+        // Add remaining text
+        result += text.substring(lastPosition);
+        
+        return result;
+      }
+      
+      toString() {
+        return this.root.toString();
+      }
+    }
+
+    // UI Integration
+    const editor = document.getElementById('editor');
+    const preview = document.getElementById('preview');
+    const treeDebug = document.getElementById('treeDebug');
+    const boldBtn = document.getElementById('boldBtn');
+    const italicBtn = document.getElementById('italicBtn');
+    const underlineBtn = document.getElementById('underlineBtn');
+    const modeToggle = document.getElementById('modeToggle');
+    const currentMode = document.getElementById('currentMode');
+    const status = document.getElementById('status');
+    
+    // Initialize tree
+    let tree = new TaggedIntervalTree(0, editor.value.length);
+    
+    // Initial mode is "add"
+    let isRemoveMode = false;
+    
+    function updatePreview() {
+      const text = editor.value;
+      // Update preview with formatted text
+      preview.innerHTML = tree.getFormattedText(text);
+      treeDebug.textContent = tree.toString();
+    }
+    
+    function showStatus(message, isError = false) {
+      status.textContent = message;
+      status.classList.add('active');
+      status.style.backgroundColor = isError ? '#ffe0e0' : '#e0ffe0';
+      setTimeout(() => {
+        status.classList.remove('active');
+      }, 3000);
+    }
+    
+    function toggleTag(tag) {
+      const start = editor.selectionStart;
+      const end = editor.selectionEnd;
+      
+      if (start === end) {
+        showStatus("Please select some text first!", true);
+        return;
+      }
+      
+      if (isRemoveMode) {
+        const removed = tree.removeTag(tag, [start, end]);
+        if (removed) {
+          showStatus(`Removed ${tag} formatting from selection`);
+        } else {
+          showStatus(`No ${tag} formatting found in selection`, true);
+        }
+      } else {
+        tree.addTag(tag, [start, end]);
+        showStatus(`Applied ${tag} formatting to selection`);
+      }
+      
+      updatePreview();
+    }
+    
+    // Initialize with empty tree
+    tree = new TaggedIntervalTree(0, editor.value.length);
+    updatePreview();
+    
+    // Event listeners
+    editor.addEventListener('input', function() {
+      // Resize the tree if needed
+      if (editor.value.length > tree.root.interval[1]) {
+        tree.root.interval[1] = editor.value.length;
+      }
+      updatePreview();
+    });
+    
+    // Mode toggle
+    modeToggle.addEventListener('change', function() {
+      isRemoveMode = this.checked;
+      currentMode.textContent = isRemoveMode ? "Removing" : "Adding";
+      currentMode.style.color = isRemoveMode ? "#f00" : "#000";
+      showStatus(`Switched to ${isRemoveMode ? 'Remove' : 'Add'} mode`);
+    });
+    
+    // Format buttons
+    boldBtn.addEventListener('click', function() {
+      toggleTag('b');
+    });
+    
+    italicBtn.addEventListener('click', function() {
+      toggleTag('i');
+    });
+    
+    underlineBtn.addEventListener('click', function() {
+      toggleTag('u');
+    });
+  </script>
+</body>
+</html>
