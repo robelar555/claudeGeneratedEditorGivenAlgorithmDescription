@@ -12,6 +12,9 @@ Pictures
 ![image](https://github.com/user-attachments/assets/0ca74742-b94d-46c4-a2e9-6b52ef638537)
 
 
+Tests result of jasmine tests
+--------
+![image](https://github.com/user-attachments/assets/75363731-134a-4628-9045-5037a8565776)
 
 
 
