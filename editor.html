@@ -186,6 +186,7 @@
   </div>
 
   <script>
+ 
     /**
      * Tagged Interval Tree Editor
      * 
@@ -384,249 +385,336 @@
         return result.removed;
       }
       
-      _removeTagDFS(node, tag, start, end) {
-        // Adjust interval to node boundaries
-        const effectiveStart = Math.max(start, node.interval[0]);
-        const effectiveEnd = Math.min(end, node.interval[1]);
+   // Remove a tag from an interval
+  removeTag(tag, interval) {
+    const [start, end] = interval;
+    if (start >= end) return false; // Invalid interval
+    
+    console.log(`Removing tag ${tag} from interval [${start},${end}]`);
+    const result = this._removeTagDFS(this.root, tag, start, end);
+    this._ensureTreeProperties(this.root);
+    return result.removed;
+  }
+  
+  _removeTagDFS(node, tag, start, end) {
+    // Adjust interval to node boundaries
+    const effectiveStart = Math.max(start, node.interval[0]);
+    const effectiveEnd = Math.min(end, node.interval[1]);
+    
+    if (effectiveStart >= effectiveEnd) {
+      return { 
+        removed: false,
+        state: 'NO_OVERLAP',
+        remainingInterval: [start, end],
+        rehookNodeList: []
+      };
+    }
+    
+    // Check if this node has the tag to remove
+    if (node.tag === tag) {
+      const originalStart = node.interval[0];
+      const originalEnd = node.interval[1];
+      const rehookNodeList = [];
+      
+      // Case 1: Remove-interval is inside a tag (not touching start and end position)
+      if (effectiveStart > originalStart && effectiveEnd < originalEnd) {
+        // Create separate collections for children
+        const beforeNodes = [];
+        const insideNodes = [];
+        const afterNodes = [];
         
-        if (effectiveStart >= effectiveEnd) {
-          return { 
-            removed: false,
-            state: 'NO_OVERLAP',
-            remainingInterval: [start, end],
-            rehookNodeList: []
-          };
-        }
-        
-        // Check if this node has the tag to remove
-        if (node.tag === tag) {
-          const originalStart = node.interval[0];
-          const originalEnd = node.interval[1];
-          const rehookNodeList = [];
-          
-          // Case 1: Remove-interval is inside a tag (not touching start and end position)
-          if (effectiveStart > originalStart && effectiveEnd < originalEnd) {
-            // Nodes inside remove-interval
-            const insideNodes = [];
-            // Nodes before remove-interval
-            const beforeNodes = [];
-            // Nodes after remove-interval
-            const afterNodes = [];
-            
-            // Categorize children
-            for (const child of node.children) {
-              if (child.interval[1] <= effectiveStart) {
-                // Child is entirely before the remove interval
-                beforeNodes.push(child);
-              } else if (child.interval[0] >= effectiveEnd) {
-                // Child is entirely after the remove interval
-                afterNodes.push(child);
-              } else {
-                // Child overlaps with remove interval - needs recursive handling
-                const childResult = this._removeTagDFS(child, tag, start, end);
-                if (childResult.removed) {
-                  // Add any rehook nodes to our list
-                  rehookNodeList.push(...childResult.rehookNodeList);
-                } else {
-                  // If nothing was removed, treat it as inside
-                  insideNodes.push(child);
-                }
-              }
-            }
-            
-            // Create pre-tag node
-            if (effectiveStart > originalStart) {
-              const preTagNode = new IntervalNode(originalStart, effectiveStart, tag);
-              preTagNode.children = beforeNodes;
-              rehookNodeList.push(preTagNode);
-            } else {
-              // Just add before nodes directly to rehook list
-              rehookNodeList.push(...beforeNodes);
-            }
-            
-            // Add inside nodes directly to rehook list
-            rehookNodeList.push(...insideNodes);
-            
-            // Create post-tag node
-            if (effectiveEnd < originalEnd) {
-              const postTagNode = new IntervalNode(effectiveEnd, originalEnd, tag);
-              postTagNode.children = afterNodes;
-              rehookNodeList.push(postTagNode);
-            } else {
-              // Just add after nodes directly to rehook list
-              rehookNodeList.push(...afterNodes);
-            }
-            
-            return {
-              removed: true,
-              state: 'REMOVE-INTERVAL-INSIDE',
-              remainingInterval: [effectiveEnd, end], // This will be ignored by parent
-              rehookNodeList: rehookNodeList
-            };
-          }
-          
-          // Case 2: Remove-interval is at start of tag interval
-          if (effectiveStart <= originalStart && effectiveEnd < originalEnd) {
-            // Adjust this node's interval
-            node.interval[0] = effectiveEnd;
-            
-            return {
-              removed: true, 
-              state: 'REMOVE-INTERVAL-LEFT',
-              remainingInterval: [effectiveEnd, end],
-              rehookNodeList: []
-            };
-          }
-          
-          // Case 3: Remove-interval is at end of tag interval
-          if (effectiveStart > originalStart && effectiveEnd >= originalEnd) {
-            // Adjust this node's interval
-            node.interval[1] = effectiveStart;
-            
-            return {
-              removed: true,
-              state: 'REMOVE-INTERVAL-RIGHT',
-              remainingInterval: [start, effectiveStart],
-              rehookNodeList: []
-            };
-          }
-          
-          // Case 4: Remove-interval covers entire tag
-          if (effectiveStart <= originalStart && effectiveEnd >= originalEnd) {
-            return {
-              removed: true,
-              state: 'REMOVE-ENTIRE-NODE',
-              remainingInterval: [effectiveEnd, end],
-              rehookNodeList: node.children
-            };
-          }
-        }
-        
-        // Process children
-        let removed = false;
-        let i = 0;
-        
-        while (i < node.children.length) {
-          const child = node.children[i];
-          
-          // Skip if no overlap
-          if (effectiveEnd <= child.interval[0] || effectiveStart >= child.interval[1]) {
-            i++;
-            continue;
-          }
-          
-          const childResult = this._removeTagDFS(child, tag, start, end);
-          
-          if (childResult.removed) {
-            removed = true;
-            
-            if (childResult.state === 'REMOVE-ENTIRE-NODE' || 
-                childResult.state === 'REMOVE-INTERVAL-INSIDE') {
-              // Remove this child and add its rehook nodes
-              node.children.splice(i, 1);
-              
-              // Insert rehook nodes
-              if (childResult.rehookNodeList.length > 0) {
-                Array.prototype.splice.apply(
-                  node.children, 
-                  [i, 0].concat(childResult.rehookNodeList)
-                );
-                i += childResult.rehookNodeList.length;
-              }
-            } else {
-              // For LEFT and RIGHT states, the child was adjusted, so keep it
-              i++;
-            }
-            
-            // Continue with remaining interval if any
-            if (childResult.remainingInterval[0] < childResult.remainingInterval[1]) {
-              // Call recursively with remaining interval
-              const remainingResult = this._removeTagDFS(
-                node, 
-                tag, 
-                childResult.remainingInterval[0], 
-                childResult.remainingInterval[1]
-              );
-              
-              if (remainingResult.removed) {
-                removed = true;
-              }
-            }
+        // Categorize children based on their position relative to the removal interval
+        for (const child of node.children) {
+          if (child.interval[1] <= effectiveStart) {
+            // Child is entirely before removal interval
+            beforeNodes.push(child);
+          } else if (child.interval[0] >= effectiveEnd) {
+            // Child is entirely after removal interval
+            afterNodes.push(child);
           } else {
-            i++;
+            // Child overlaps with removal interval - needs further processing
+            const childResult = this._removeTagDFS(child, tag, effectiveStart, effectiveEnd);
+            if (childResult.state === 'REMOVE-ENTIRE-NODE' || childResult.state === 'REMOVE-INTERVAL-INSIDE') {
+              // If child is completely removed or split, add its rehook nodes
+              rehookNodeList.push(...childResult.rehookNodeList);
+            } else if (childResult.state === 'REMOVE-INTERVAL-LEFT' || childResult.state === 'REMOVE-INTERVAL-RIGHT') {
+              // If child is partially removed, it's still in the tree
+              insideNodes.push(child);
+            } else {
+              // If nothing was removed, keep the child as is
+              insideNodes.push(child);
+            }
           }
+        }
+        
+        // Create pre-tag node (before the removal interval)
+        if (effectiveStart > originalStart) {
+          const preTagNode = new IntervalNode(originalStart, effectiveStart, tag);
+          preTagNode.children = [...beforeNodes]; // Clone to avoid reference issues
+          rehookNodeList.push(preTagNode);
+        } else {
+          // If removal starts at node start, just add before nodes to rehook list
+          rehookNodeList.push(...beforeNodes);
+        }
+        
+        // Add inside nodes to rehook list
+        rehookNodeList.push(...insideNodes);
+        
+        // Create post-tag node (after the removal interval)
+        if (effectiveEnd < originalEnd) {
+          const postTagNode = new IntervalNode(effectiveEnd, originalEnd, tag);
+          postTagNode.children = [...afterNodes]; // Clone to avoid reference issues
+          rehookNodeList.push(postTagNode);
+        } else {
+          // If removal ends at node end, just add after nodes to rehook list
+          rehookNodeList.push(...afterNodes);
         }
         
         return {
-          removed: removed,
-          state: 'PROCESSED_CHILDREN',
-          remainingInterval: [end, end], // Empty interval
+          removed: true,
+          state: 'REMOVE-INTERVAL-INSIDE',
+          remainingInterval: [end, end], // Empty interval since we've handled it
+          rehookNodeList: rehookNodeList
+        };
+      }
+      
+      // Case 2: Remove-interval starts at or before tag start but ends within tag
+      if (effectiveStart <= originalStart && effectiveEnd < originalEnd) {
+        // Adjust this node's interval to start at the end of the removal
+        node.interval[0] = effectiveEnd;
+        
+        // Process any children that might be affected
+        const childrenToRemove = [];
+        for (let i = 0; i < node.children.length; i++) {
+          const child = node.children[i];
+          if (child.interval[1] <= effectiveEnd) {
+            // This child is entirely removed
+            childrenToRemove.push(i);
+          } else if (child.interval[0] < effectiveEnd) {
+            // This child is partially affected
+            const childResult = this._removeTagDFS(child, tag, effectiveStart, effectiveEnd);
+            if (childResult.removed && childResult.state === 'REMOVE-ENTIRE-NODE') {
+              childrenToRemove.push(i);
+              // Add any rehook nodes back to the node's children
+              for (const rehookNode of childResult.rehookNodeList) {
+                if (rehookNode.interval[0] >= effectiveEnd) {
+                  node.children.push(rehookNode);
+                }
+              }
+            }
+          }
+        }
+        
+        // Remove affected children (in reverse order to not mess up indices)
+        for (let i = childrenToRemove.length - 1; i >= 0; i--) {
+          node.children.splice(childrenToRemove[i], 1);
+        }
+        
+        return {
+          removed: true, 
+          state: 'REMOVE-INTERVAL-LEFT',
+          remainingInterval: [effectiveEnd, end],
           rehookNodeList: []
         };
       }
       
-      // Ensure tree properties (non-overlapping, sorted, merged, inside parent)
-      _ensureTreeProperties(node) {
-        if (!node || node.children.length === 0) return;
+      // Case 3: Remove-interval starts within tag but extends to or beyond tag end
+      if (effectiveStart > originalStart && effectiveEnd >= originalEnd) {
+        // Adjust this node's interval to end at the start of the removal
+        node.interval[1] = effectiveStart;
         
-        // Sort children by start position (Sorted property)
-        node.children.sort((a, b) => a.interval[0] - b.interval[0]);
-        
-        // Remove any empty intervals
-        node.children = node.children.filter(child => 
-          child.interval[0] < child.interval[1]);
-        
-        if (node.children.length === 0) return;
-        
-        // Merge adjacent/overlapping nodes with same tag (Merged property)
-        const mergedChildren = [];
-        let current = node.children[0];
-        
-        for (let i = 1; i < node.children.length; i++) {
-          const next = node.children[i];
-          
-          // Same tag and adjacent/overlapping - merge
-          if (current.tag === next.tag && next.interval[0] <= current.interval[1]) {
-            current.interval[1] = Math.max(current.interval[1], next.interval[1]);
-            // Merge children too
-            current.children.push(...next.children);
-          } else {
-            mergedChildren.push(current);
-            current = next;
-          }
-        }
-        
-        mergedChildren.push(current);
-        node.children = mergedChildren;
-        
-        // Process children recursively
-        for (const child of node.children) {
-          // Ensure child interval fits within parent (Inside property)
-          child.interval[0] = Math.max(child.interval[0], node.interval[0]);
-          child.interval[1] = Math.min(child.interval[1], node.interval[1]);
-          
-          // Check Tag property (a node cannot have the same tag as its parent)
-          if (child.tag === node.tag) {
-            // Move child's children up and remove child
-            for (const grandchild of child.children) {
-              if (grandchild.tag !== node.tag) {
-                node.children.push(grandchild);
+        // Process any children that might be affected
+        const childrenToRemove = [];
+        for (let i = 0; i < node.children.length; i++) {
+          const child = node.children[i];
+          if (child.interval[0] >= effectiveStart) {
+            // This child is entirely removed
+            childrenToRemove.push(i);
+          } else if (child.interval[1] > effectiveStart) {
+            // This child is partially affected
+            const childResult = this._removeTagDFS(child, tag, effectiveStart, child.interval[1]);
+            if (childResult.removed && childResult.state === 'REMOVE-ENTIRE-NODE') {
+              childrenToRemove.push(i);
+              // Add any rehook nodes back to the node's children
+              for (const rehookNode of childResult.rehookNodeList) {
+                if (rehookNode.interval[1] <= effectiveStart) {
+                  node.children.push(rehookNode);
+                }
               }
             }
-            // Remove this child from the list later
-          } else {
-            // Process this child recursively
-            this._ensureTreeProperties(child);
           }
         }
         
-        // Final filter to remove children with same tag as parent
-        node.children = node.children.filter(child => child.tag !== node.tag);
+        // Remove affected children (in reverse order to not mess up indices)
+        for (let i = childrenToRemove.length - 1; i >= 0; i--) {
+          node.children.splice(childrenToRemove[i], 1);
+        }
         
-        // One more sort to ensure everything is properly ordered
-        node.children.sort((a, b) => a.interval[0] - b.interval[0]);
+        return {
+          removed: true,
+          state: 'REMOVE-INTERVAL-RIGHT',
+          remainingInterval: [start, effectiveStart],
+          rehookNodeList: []
+        };
       }
       
+      // Case 4: Remove-interval completely covers tag
+      if (effectiveStart <= originalStart && effectiveEnd >= originalEnd) {
+        // Process children to see if any need tag removal too
+        const processedChildren = [];
+        for (const child of node.children) {
+          // If child overlaps with removal interval
+          if (child.interval[0] < effectiveEnd && child.interval[1] > effectiveStart) {
+            const childResult = this._removeTagDFS(child, tag, effectiveStart, effectiveEnd);
+            if (childResult.removed) {
+              // Add rehook nodes from child
+              processedChildren.push(...childResult.rehookNodeList);
+            } else {
+              // Keep child as is
+              processedChildren.push(child);
+            }
+          } else {
+            // Child doesn't overlap, keep it
+            processedChildren.push(child);
+          }
+        }
+        
+        return {
+          removed: true,
+          state: 'REMOVE-ENTIRE-NODE',
+          remainingInterval: [effectiveEnd, end],
+          rehookNodeList: processedChildren
+        };
+      }
+    }
+    
+    // This node doesn't have the tag to remove, so process children
+    let removed = false;
+    let i = 0;
+    
+    while (i < node.children.length) {
+      const child = node.children[i];
+      
+      // Skip if no overlap
+      if (effectiveEnd <= child.interval[0] || effectiveStart >= child.interval[1]) {
+        i++;
+        continue;
+      }
+      
+      const childResult = this._removeTagDFS(child, tag, start, end);
+      
+      if (childResult.removed) {
+        removed = true;
+        
+        if (childResult.state === 'REMOVE-ENTIRE-NODE' || 
+            childResult.state === 'REMOVE-INTERVAL-INSIDE') {
+          // Remove this child and add its rehook nodes
+          node.children.splice(i, 1);
+          
+          // Insert rehook nodes
+          if (childResult.rehookNodeList.length > 0) {
+            node.children.splice(i, 0, ...childResult.rehookNodeList);
+            i += childResult.rehookNodeList.length;
+          }
+        } else {
+          // For LEFT and RIGHT states, the child was adjusted, so keep it
+          i++;
+        }
+        
+        // Continue with remaining interval if any
+        if (childResult.remainingInterval[0] < childResult.remainingInterval[1]) {
+          // Call recursively with remaining interval
+          const remainingResult = this._removeTagDFS(
+            node, 
+            tag, 
+            childResult.remainingInterval[0], 
+            childResult.remainingInterval[1]
+          );
+          
+          if (remainingResult.removed) {
+            removed = true;
+          }
+        }
+      } else {
+        i++;
+      }
+    }
+    
+    // Ensure child intervals are properly nested within parent
+    for (const child of node.children) {
+      child.interval[0] = Math.max(child.interval[0], node.interval[0]);
+      child.interval[1] = Math.min(child.interval[1], node.interval[1]);
+    }
+    
+    return {
+      removed: removed,
+      state: 'PROCESSED_CHILDREN',
+      remainingInterval: [Math.max(effectiveEnd, start), end], // Remaining part after this node
+      rehookNodeList: []
+    };
+  }
+  
+  // Ensure tree properties (non-overlapping, sorted, merged, inside parent)
+  _ensureTreeProperties(node) {
+    if (!node || node.children.length === 0) return;
+    
+    // Sort children by start position (Sorted property)
+    node.children.sort((a, b) => a.interval[0] - b.interval[0]);
+    
+    // Remove any empty intervals
+    node.children = node.children.filter(child => 
+      child.interval[0] < child.interval[1]);
+    
+    if (node.children.length === 0) return;
+    
+    // Merge adjacent/overlapping nodes with same tag (Merged property)
+    const mergedChildren = [];
+    let current = node.children[0];
+    
+    for (let i = 1; i < node.children.length; i++) {
+      const next = node.children[i];
+      
+      // Same tag and adjacent/overlapping - merge
+      if (current.tag === next.tag && next.interval[0] <= current.interval[1]) {
+        current.interval[1] = Math.max(current.interval[1], next.interval[1]);
+        // Merge children too
+        current.children.push(...next.children);
+      } else {
+        mergedChildren.push(current);
+        current = next;
+      }
+    }
+    
+    mergedChildren.push(current);
+    node.children = mergedChildren;
+    
+    // Process children recursively
+    for (const child of node.children) {
+      // Ensure child interval fits within parent (Inside property)
+      child.interval[0] = Math.max(child.interval[0], node.interval[0]);
+      child.interval[1] = Math.min(child.interval[1], node.interval[1]);
+      
+      // Check Tag property (a node cannot have the same tag as its parent)
+      if (child.tag === node.tag) {
+        // Move child's children up and remove child
+        for (const grandchild of child.children) {
+          if (grandchild.tag !== node.tag) {
+            node.children.push(grandchild);
+          }
+        }
+        // Remove this child from the list later
+      } else {
+        // Process this child recursively
+        this._ensureTreeProperties(child);
+      }
+    }
+    
+    // Final filter to remove children with same tag as parent
+    node.children = node.children.filter(child => child.tag !== node.tag);
+    
+    // One more sort to ensure everything is properly ordered
+    node.children.sort((a, b) => a.interval[0] - b.interval[0]);
+  }      
       // Check if an interval has a specific tag
       hasTag(tag, interval) {
         const [start, end] = interval;
@@ -721,6 +809,8 @@
         return this.root.toString();
       }
     }
+
+
 
     // UI Integration
     const editor = document.getElementById('editor');
