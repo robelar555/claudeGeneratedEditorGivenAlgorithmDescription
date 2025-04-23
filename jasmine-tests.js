@@ -299,7 +299,6 @@ describe('Complex scenarios', () => {
     expect(textOnly).toBe("0123456789012345678901234567890123456789");
   });
 
-  // Other tests remain unchanged...
 });
 
 describe('Edge cases', function() {
