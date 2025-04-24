@@ -187,6 +187,7 @@
 
   <script>
  
+
     /**
      * Tagged Interval Tree Editor
      * 
@@ -253,146 +254,215 @@
      * Because interval of all childs is inside parent interval (inside property), and because all child have non-overlapping intervals 
      * (non-overlaping properties), non-overlapping intervals is uphold when being added to its parent of parent.
      */
+class IntervalNode {
+  constructor(start, end, tag = null) {
+    this.interval = [start, end];
+    this.tag = tag;
+    this.children = [];
+  }
+  
+  toString(indent = 0) {
+    const indentStr = ' '.repeat(indent);
+    let result = `${indentStr}[${this.interval[0]},${this.interval[1]}]`;
+    if (this.tag) {
+      result += ` tag: ${this.tag}`;
+    }
+    result += '\n';
     
-    // Tagged Interval Tree Implementation
-    class IntervalNode {
-      constructor(start, end, tag = null) {
-        this.interval = [start, end];
-        this.tag = tag;
-        this.children = [];
+    for (const child of this.children) {
+      result += child.toString(indent + 2);
+    }
+    return result;
+  }
+}
+
+class TaggedIntervalTree {
+  constructor(start = 0, end = 0) {
+    this.root = new IntervalNode(start, end);
+  }
+  
+  // Add a tag to an interval
+  addTag(tag, interval) {
+    const [start, end] = interval;
+    if (start >= end) return; // Invalid interval
+    
+    console.log(`Adding tag ${tag} to interval [${start},${end}]`);
+    this._addTagDFS(this.root, tag, start, end);
+  }
+  
+  _addTagDFS(node, tag, start, end) {
+    // Make sure we're working within the node's interval
+    start = Math.max(start, node.interval[0]);
+    end = Math.min(end, node.interval[1]);
+    
+    if (start >= end) return null; // No valid interval
+    
+    // If this node has the same tag, we don't need to add it again
+    if (node.tag === tag) return null;
+    
+    // If no children, create a new child with this tag
+    if (node.children.length === 0) {
+      const newNode = new IntervalNode(start, end, tag);
+      node.children.push(newNode);
+      return;
+    }
+    
+    // We need to find where to insert the new tag
+    let insertPoints = [];
+    let currentPos = start;
+    
+    // Check if we need to insert before the first child
+    if (currentPos < node.children[0].interval[0]) {
+      insertPoints.push({
+        index: 0,
+        start: currentPos,
+        end: Math.min(end, node.children[0].interval[0])
+      });
+      currentPos = Math.min(end, node.children[0].interval[0]);
+    }
+    
+    // Go through each child
+    for (let i = 0; i < node.children.length && currentPos < end; i++) {
+      const child = node.children[i];
+      
+      // If current position is before this child's start
+      if (currentPos < child.interval[0]) {
+        // Insert a new node before this child
+        insertPoints.push({
+          index: i,
+          start: currentPos,
+          end: Math.min(end, child.interval[0])
+        });
+        currentPos = Math.min(end, child.interval[0]);
       }
       
-      toString(indent = 0) {
-        const indentStr = ' '.repeat(indent);
-        let result = `${indentStr}[${this.interval[0]},${this.interval[1]}]`;
-        if (this.tag) {
-          result += ` tag: ${this.tag}`;
-        }
-        result += '\n';
-        
-        for (const child of this.children) {
-          result += child.toString(indent + 2);
-        }
-        return result;
+      // If current position overlaps with this child
+      if (currentPos < child.interval[1]) {
+        // Recursively add tag to this child
+        this._addTagDFS(child, tag, currentPos, end);
+        currentPos = child.interval[1];
+      }
+      
+      // If there's a gap after this child and before the next
+      const nextChild = node.children[i + 1];
+      if (currentPos < end && nextChild && currentPos < nextChild.interval[0]) {
+        insertPoints.push({
+          index: i + 1,
+          start: currentPos,
+          end: Math.min(end, nextChild.interval[0])
+        });
+        currentPos = Math.min(end, nextChild.interval[0]);
       }
     }
-
-    class TaggedIntervalTree {
-      constructor(start = 0, end = 0) {
-        this.root = new IntervalNode(start, end);
-      }
+    
+    // If we still have interval left after all children
+    if (currentPos < end) {
+      insertPoints.push({
+        index: node.children.length,
+        start: currentPos,
+        end: end
+      });
+    }
+    
+    // Process insertion points - try to merge with existing nodes first
+    for (let i = insertPoints.length - 1; i >= 0; i--) {
+      const point = insertPoints[i];
+      const newNode = new IntervalNode(point.start, point.end, tag);
       
-      // Add a tag to an interval
-      addTag(tag, interval) {
-        const [start, end] = interval;
-        if (start >= end) return; // Invalid interval
-        
-        console.log(`Adding tag ${tag} to interval [${start},${end}]`);
-        this._addTagDFS(this.root, tag, start, end);
-        this._ensureTreeProperties(this.root);
-      }
+      // Check if we can merge with existing neighbors
+      let merged = false;
       
-      _addTagDFS(node, tag, start, end) {
-        // Make sure we're working within the node's interval
-        start = Math.max(start, node.interval[0]);
-        end = Math.min(end, node.interval[1]);
-        
-        if (start >= end) return null; // No valid interval
-        
-        // If this node has the same tag, we don't need to add it again
-        if (node.tag === tag) return null;
-        
-        // If no children, create a new child with this tag
-        if (node.children.length === 0) {
-          const newNode = new IntervalNode(start, end, tag);
-          node.children.push(newNode);
-          return;
-        }
-        
-        // We need to find where to insert the new tag
-        let insertPoints = [];
-        let currentPos = start;
-        
-        // Check if we need to insert before the first child
-        if (currentPos < node.children[0].interval[0]) {
-          insertPoints.push({
-            index: 0,
-            start: currentPos,
-            end: Math.min(end, node.children[0].interval[0])
-          });
-          currentPos = Math.min(end, node.children[0].interval[0]);
-        }
-        
-        // Go through each child
-        for (let i = 0; i < node.children.length && currentPos < end; i++) {
-          const child = node.children[i];
+      // Try to merge with previous node if it has the same tag
+      if (point.index > 0) {
+        const prevNode = node.children[point.index - 1];
+        if (prevNode.tag === tag && prevNode.interval[1] >= point.start) {
+          // Extend previous node instead of creating a new one
+          prevNode.interval[1] = Math.max(prevNode.interval[1], point.end);
+          merged = true;
           
-          // If current position is before this child's start
-          if (currentPos < child.interval[0]) {
-            // Insert a new node before this child
-            insertPoints.push({
-              index: i,
-              start: currentPos,
-              end: Math.min(end, child.interval[0])
-            });
-            currentPos = Math.min(end, child.interval[0]);
+          // Check if this also merges with next node
+          if (point.index < node.children.length) {
+            const nextNode = node.children[point.index];
+            if (nextNode.tag === tag && prevNode.interval[1] >= nextNode.interval[0]) {
+              // Merge next node into previous node
+              prevNode.interval[1] = Math.max(prevNode.interval[1], nextNode.interval[1]);
+              // Move next node's children to previous node
+              prevNode.children.push(...nextNode.children);
+              // Remove the next node
+              node.children.splice(point.index, 1);
+            }
           }
           
-          // If current position overlaps with this child
-          if (currentPos < child.interval[1]) {
-            // Recursively add tag to this child
-            this._addTagDFS(child, tag, currentPos, end);
-            currentPos = child.interval[1];
-          }
-          
-          // If there's a gap after this child and before the next
-          const nextChild = node.children[i + 1];
-          if (currentPos < end && nextChild && currentPos < nextChild.interval[0]) {
-            insertPoints.push({
-              index: i + 1,
-              start: currentPos,
-              end: Math.min(end, nextChild.interval[0])
-            });
-            currentPos = Math.min(end, nextChild.interval[0]);
-          }
-        }
-        
-        // If we still have interval left after all children
-        if (currentPos < end) {
-          insertPoints.push({
-            index: node.children.length,
-            start: currentPos,
-            end: end
-          });
-        }
-        
-        // Insert all the new nodes (in reverse order to not mess up indices)
-        for (let i = insertPoints.length - 1; i >= 0; i--) {
-          const point = insertPoints[i];
-          const newNode = new IntervalNode(point.start, point.end, tag);
-          node.children.splice(point.index, 0, newNode);
+          continue;
         }
       }
       
-      // Remove a tag from an interval
-      removeTag(tag, interval) {
-        const [start, end] = interval;
-        if (start >= end) return false; // Invalid interval
-        
-        console.log(`Removing tag ${tag} from interval [${start},${end}]`);
-        const result = this._removeTagDFS(this.root, tag, start, end);
-        this._ensureTreeProperties(this.root);
-        return result.removed;
+      // Try to merge with next node if it has the same tag
+      if (point.index < node.children.length && !merged) {
+        const nextNode = node.children[point.index];
+        if (nextNode.tag === tag && point.end >= nextNode.interval[0]) {
+          // Extend next node instead of creating a new one
+          nextNode.interval[0] = Math.min(nextNode.interval[0], point.start);
+          merged = true;
+          continue;
+        }
       }
       
-   // Remove a tag from an interval
+      // If no merges were possible, insert the new node
+      if (!merged) {
+        node.children.splice(point.index, 0, newNode);
+      }
+    }
+    
+    // Process children to ensure tag property (child cannot have same tag as parent)
+    this._processChildrenWithSameTag(node);
+  }
+  
+  // Helper to process and remove children with same tag as parent
+  _processChildrenWithSameTag(node) {
+    if (!node || node.children.length === 0) return;
+    
+    // Check if any children have the same tag as the parent
+    const childrenToRemove = [];
+    const grandchildrenToAdd = [];
+    
+    for (let i = 0; i < node.children.length; i++) {
+      const child = node.children[i];
+      if (child.tag === node.tag) {
+        childrenToRemove.push(i);
+        // Add grandchildren that don't have the same tag
+        for (const grandchild of child.children) {
+          if (grandchild.tag !== node.tag) {
+            grandchildrenToAdd.push(grandchild);
+          }
+        }
+      }
+    }
+    
+    // Remove children with same tag (in reverse order)
+    for (let i = childrenToRemove.length - 1; i >= 0; i--) {
+      node.children.splice(childrenToRemove[i], 1);
+    }
+    
+    // Add grandchildren
+    for (const grandchild of grandchildrenToAdd) {
+      // Insert in the right position
+      let insertIndex = 0;
+      while (insertIndex < node.children.length && 
+             node.children[insertIndex].interval[0] < grandchild.interval[0]) {
+        insertIndex++;
+      }
+      node.children.splice(insertIndex, 0, grandchild);
+    }
+  }
+  
+  // Remove a tag from an interval
   removeTag(tag, interval) {
     const [start, end] = interval;
     if (start >= end) return false; // Invalid interval
     
     console.log(`Removing tag ${tag} from interval [${start},${end}]`);
     const result = this._removeTagDFS(this.root, tag, start, end);
-    this._ensureTreeProperties(this.root);
     return result.removed;
   }
   
@@ -451,6 +521,7 @@
         if (effectiveStart > originalStart) {
           const preTagNode = new IntervalNode(originalStart, effectiveStart, tag);
           preTagNode.children = [...beforeNodes]; // Clone to avoid reference issues
+          this._processChildrenWithSameTag(preTagNode);
           rehookNodeList.push(preTagNode);
         } else {
           // If removal starts at node start, just add before nodes to rehook list
@@ -464,11 +535,15 @@
         if (effectiveEnd < originalEnd) {
           const postTagNode = new IntervalNode(effectiveEnd, originalEnd, tag);
           postTagNode.children = [...afterNodes]; // Clone to avoid reference issues
+          this._processChildrenWithSameTag(postTagNode);
           rehookNodeList.push(postTagNode);
         } else {
           // If removal ends at node end, just add after nodes to rehook list
           rehookNodeList.push(...afterNodes);
         }
+        
+        // Sort the rehook list by start position
+        rehookNodeList.sort((a, b) => a.interval[0] - b.interval[0]);
         
         return {
           removed: true,
@@ -485,6 +560,8 @@
         
         // Process any children that might be affected
         const childrenToRemove = [];
+        const childrenToAdd = [];
+        
         for (let i = 0; i < node.children.length; i++) {
           const child = node.children[i];
           if (child.interval[1] <= effectiveEnd) {
@@ -498,7 +575,7 @@
               // Add any rehook nodes back to the node's children
               for (const rehookNode of childResult.rehookNodeList) {
                 if (rehookNode.interval[0] >= effectiveEnd) {
-                  node.children.push(rehookNode);
+                  childrenToAdd.push(rehookNode);
                 }
               }
             }
@@ -508,6 +585,17 @@
         // Remove affected children (in reverse order to not mess up indices)
         for (let i = childrenToRemove.length - 1; i >= 0; i--) {
           node.children.splice(childrenToRemove[i], 1);
+        }
+        
+        // Add new children in the right positions
+        for (const childToAdd of childrenToAdd) {
+          // Find the correct insertion point
+          let insertIndex = 0;
+          while (insertIndex < node.children.length && 
+                 node.children[insertIndex].interval[0] < childToAdd.interval[0]) {
+            insertIndex++;
+          }
+          node.children.splice(insertIndex, 0, childToAdd);
         }
         
         return {
@@ -525,6 +613,8 @@
         
         // Process any children that might be affected
         const childrenToRemove = [];
+        const childrenToAdd = [];
+        
         for (let i = 0; i < node.children.length; i++) {
           const child = node.children[i];
           if (child.interval[0] >= effectiveStart) {
@@ -538,7 +628,7 @@
               // Add any rehook nodes back to the node's children
               for (const rehookNode of childResult.rehookNodeList) {
                 if (rehookNode.interval[1] <= effectiveStart) {
-                  node.children.push(rehookNode);
+                  childrenToAdd.push(rehookNode);
                 }
               }
             }
@@ -548,6 +638,17 @@
         // Remove affected children (in reverse order to not mess up indices)
         for (let i = childrenToRemove.length - 1; i >= 0; i--) {
           node.children.splice(childrenToRemove[i], 1);
+        }
+        
+        // Add new children in the right positions
+        for (const childToAdd of childrenToAdd) {
+          // Find the correct insertion point
+          let insertIndex = 0;
+          while (insertIndex < node.children.length && 
+                 node.children[insertIndex].interval[0] < childToAdd.interval[0]) {
+            insertIndex++;
+          }
+          node.children.splice(insertIndex, 0, childToAdd);
         }
         
         return {
@@ -578,6 +679,9 @@
             processedChildren.push(child);
           }
         }
+        
+        // Sort the processed children by start position
+        processedChildren.sort((a, b) => a.interval[0] - b.interval[0]);
         
         return {
           removed: true,
@@ -611,10 +715,18 @@
           // Remove this child and add its rehook nodes
           node.children.splice(i, 1);
           
-          // Insert rehook nodes
+          // Insert rehook nodes in sorted order
           if (childResult.rehookNodeList.length > 0) {
-            node.children.splice(i, 0, ...childResult.rehookNodeList);
-            i += childResult.rehookNodeList.length;
+            // Find correct insertion points for each rehook node
+            for (const rehookNode of childResult.rehookNodeList) {
+              let insertAt = i;
+              // Find the right position by start interval
+              while (insertAt < node.children.length && 
+                     node.children[insertAt].interval[0] < rehookNode.interval[0]) {
+                insertAt++;
+              }
+              node.children.splice(insertAt, 0, rehookNode);
+            }
           }
         } else {
           // For LEFT and RIGHT states, the child was adjusted, so keep it
@@ -654,163 +766,100 @@
     };
   }
   
-  // Ensure tree properties (non-overlapping, sorted, merged, inside parent)
-  _ensureTreeProperties(node) {
-    if (!node || node.children.length === 0) return;
-    
-    // Sort children by start position (Sorted property)
-    node.children.sort((a, b) => a.interval[0] - b.interval[0]);
-    
-    // Remove any empty intervals
-    node.children = node.children.filter(child => 
-      child.interval[0] < child.interval[1]);
-    
-    if (node.children.length === 0) return;
-    
-    // Merge adjacent/overlapping nodes with same tag (Merged property)
-    const mergedChildren = [];
-    let current = node.children[0];
-    
-    for (let i = 1; i < node.children.length; i++) {
-      const next = node.children[i];
-      
-      // Same tag and adjacent/overlapping - merge
-      if (current.tag === next.tag && next.interval[0] <= current.interval[1]) {
-        current.interval[1] = Math.max(current.interval[1], next.interval[1]);
-        // Merge children too
-        current.children.push(...next.children);
-      } else {
-        mergedChildren.push(current);
-        current = next;
-      }
+  // Check if an interval has a specific tag
+  hasTag(tag, interval) {
+    const [start, end] = interval;
+    return this._checkTagDFS(this.root, tag, start, end);
+  }
+  
+  _checkTagDFS(node, tag, start, end) {
+    // If this node has the tag and fully contains the interval
+    if (node.tag === tag && 
+        node.interval[0] <= start && 
+        node.interval[1] >= end) {
+      return true;
     }
     
-    mergedChildren.push(current);
-    node.children = mergedChildren;
-    
-    // Process children recursively
+    // Check children
     for (const child of node.children) {
-      // Ensure child interval fits within parent (Inside property)
-      child.interval[0] = Math.max(child.interval[0], node.interval[0]);
-      child.interval[1] = Math.min(child.interval[1], node.interval[1]);
+      // Skip if no overlap
+      if (end <= child.interval[0] || start >= child.interval[1]) {
+        continue;
+      }
       
-      // Check Tag property (a node cannot have the same tag as its parent)
-      if (child.tag === node.tag) {
-        // Move child's children up and remove child
-        for (const grandchild of child.children) {
-          if (grandchild.tag !== node.tag) {
-            node.children.push(grandchild);
-          }
-        }
-        // Remove this child from the list later
-      } else {
-        // Process this child recursively
-        this._ensureTreeProperties(child);
+      if (this._checkTagDFS(child, tag, start, end)) {
+        return true;
       }
     }
     
-    // Final filter to remove children with same tag as parent
-    node.children = node.children.filter(child => child.tag !== node.tag);
+    return false;
+  }
+  
+  // Get formatted text
+  getFormattedText(text) {
+    // Collect all formatting tags at each position
+    const markers = [];
     
-    // One more sort to ensure everything is properly ordered
-    node.children.sort((a, b) => a.interval[0] - b.interval[0]);
-  }      
-      // Check if an interval has a specific tag
-      hasTag(tag, interval) {
-        const [start, end] = interval;
-        return this._checkTagDFS(this.root, tag, start, end);
-      }
-      
-      _checkTagDFS(node, tag, start, end) {
-        // If this node has the tag and fully contains the interval
-        if (node.tag === tag && 
-            node.interval[0] <= start && 
-            node.interval[1] >= end) {
-          return true;
-        }
-        
-        // Check children
-        for (const child of node.children) {
-          // Skip if no overlap
-          if (end <= child.interval[0] || start >= child.interval[1]) {
-            continue;
-          }
-          
-          if (this._checkTagDFS(child, tag, start, end)) {
-            return true;
-          }
-        }
-        
-        return false;
-      }
-      
-      // Get formatted text
-      getFormattedText(text) {
-        // Collect all formatting tags at each position
-        const markers = [];
-        
-        function collectMarkers(node, parentTags = []) {
-          if (node.tag) {
-            // Add opening tag
-            markers.push({
-              position: node.interval[0],
-              tag: node.tag,
-              isOpening: true
-            });
-            
-            // Add closing tag
-            markers.push({
-              position: node.interval[1],
-              tag: node.tag,
-              isOpening: false
-            });
-          }
-          
-          // Process children
-          for (const child of node.children) {
-            collectMarkers(child, node.tag ? [...parentTags, node.tag] : parentTags);
-          }
-        }
-        
-        collectMarkers(this.root);
-        
-        // Sort markers by position (closing tags come before opening tags at same position)
-        markers.sort((a, b) => {
-          if (a.position === b.position) {
-            return a.isOpening ? 1 : -1;
-          }
-          return a.position - b.position;
+    function collectMarkers(node, parentTags = []) {
+      if (node.tag) {
+        // Add opening tag
+        markers.push({
+          position: node.interval[0],
+          tag: node.tag,
+          isOpening: true
         });
         
-        // Insert tags into text
-        let result = '';
-        let lastPosition = 0;
-        
-        for (const marker of markers) {
-          // Add text up to this marker
-          result += text.substring(lastPosition, marker.position);
-          lastPosition = marker.position;
-          
-          // Add tag
-          if (marker.isOpening) {
-            result += `<${marker.tag}>`;
-          } else {
-            result += `</${marker.tag}>`;
-          }
-        }
-        
-        // Add remaining text
-        result += text.substring(lastPosition);
-        
-        return result;
+        // Add closing tag
+        markers.push({
+          position: node.interval[1],
+          tag: node.tag,
+          isOpening: false
+        });
       }
       
-      toString() {
-        return this.root.toString();
+      // Process children
+      for (const child of node.children) {
+        collectMarkers(child, node.tag ? [...parentTags, node.tag] : parentTags);
       }
     }
-
-
+    
+    collectMarkers(this.root);
+    
+    // Sort markers by position (closing tags come before opening tags at same position)
+    markers.sort((a, b) => {
+      if (a.position === b.position) {
+        return a.isOpening ? 1 : -1;
+      }
+      return a.position - b.position;
+    });
+    
+    // Insert tags into text
+    let result = '';
+    let lastPosition = 0;
+    
+    for (const marker of markers) {
+      // Add text up to this marker
+      result += text.substring(lastPosition, marker.position);
+      lastPosition = marker.position;
+      
+      // Add tag
+      if (marker.isOpening) {
+        result += `<${marker.tag}>`;
+      } else {
+        result += `</${marker.tag}>`;
+      }
+    }
+    
+    // Add remaining text
+    result += text.substring(lastPosition);
+    
+    return result;
+  }
+  
+  toString() {
+    return this.root.toString();
+  }
+}
 
     // UI Integration
     const editor = document.getElementById('editor');
