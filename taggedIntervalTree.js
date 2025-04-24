@@ -92,6 +92,67 @@ class TaggedIntervalTree {
     this.root = new IntervalNode(start, end);
   }
   
+  // Binary search to find insertion point
+  _findInsertionPoint(children, start) {
+    if (children.length === 0) return 0;
+    
+    let left = 0;
+    let right = children.length - 1;
+    
+    while (left <= right) {
+      const mid = Math.floor((left + right) / 2);
+      if (children[mid].interval[0] === start) {
+        return mid;
+      } else if (children[mid].interval[0] < start) {
+        left = mid + 1;
+      } else {
+        right = mid - 1;
+      }
+    }
+    
+    return left;
+  }
+  
+  // Try to merge a new interval with existing children
+  _tryMergeWithNeighbors(node, newStart, newEnd, tag) {
+    if (node.children.length === 0) return false;
+    
+    // Find potential neighbors using binary search
+    const index = this._findInsertionPoint(node.children, newStart);
+    
+    // Check left neighbor if exists
+    if (index > 0) {
+      const leftNeighbor = node.children[index - 1];
+      if (leftNeighbor.tag === tag && leftNeighbor.interval[1] >= newStart) {
+        // Can merge with left neighbor
+        leftNeighbor.interval[1] = Math.max(leftNeighbor.interval[1], newEnd);
+        
+        // Check if we can also merge with right neighbor
+        if (index < node.children.length) {
+          const rightNeighbor = node.children[index];
+          if (rightNeighbor.tag === tag && leftNeighbor.interval[1] >= rightNeighbor.interval[0]) {
+            leftNeighbor.interval[1] = Math.max(leftNeighbor.interval[1], rightNeighbor.interval[1]);
+            leftNeighbor.children.push(...rightNeighbor.children);
+            node.children.splice(index, 1);
+          }
+        }
+        return true;
+      }
+    }
+    
+    // Check right neighbor if exists
+    if (index < node.children.length) {
+      const rightNeighbor = node.children[index];
+      if (rightNeighbor.tag === tag && newEnd >= rightNeighbor.interval[0]) {
+        // Can merge with right neighbor
+        rightNeighbor.interval[0] = Math.min(rightNeighbor.interval[0], newStart);
+        return true;
+      }
+    }
+    
+    return false;
+  }
+  
   // Add a tag to an interval
   addTag(tag, interval) {
     const [start, end] = interval;
@@ -118,34 +179,35 @@ class TaggedIntervalTree {
       return;
     }
     
+    // Try to merge with existing children first
+    if (this._tryMergeWithNeighbors(node, start, end, tag)) {
+      return;
+    }
+    
     // We need to find where to insert the new tag
     let insertPoints = [];
     let currentPos = start;
     
-    // Check if we need to insert before the first child
-    if (currentPos < node.children[0].interval[0]) {
-      insertPoints.push({
-        index: 0,
-        start: currentPos,
-        end: Math.min(end, node.children[0].interval[0])
-      });
-      currentPos = Math.min(end, node.children[0].interval[0]);
+    // Use binary search to find the first child that might overlap
+    let i = this._findInsertionPoint(node.children, currentPos);
+    if (i > 0 && node.children[i - 1].interval[1] > currentPos) {
+      // If previous child overlaps with our start, adjust i
+      i--;
     }
     
-    // Go through each child
-    for (let i = 0; i < node.children.length && currentPos < end; i++) {
+    // Check if we need to insert before the first relevant child
+    if (i < node.children.length && currentPos < node.children[i].interval[0]) {
+      insertPoints.push({
+        index: i,
+        start: currentPos,
+        end: Math.min(end, node.children[i].interval[0])
+      });
+      currentPos = Math.min(end, node.children[i].interval[0]);
+    }
+    
+    // Go through relevant children
+    while (i < node.children.length && currentPos < end) {
       const child = node.children[i];
-      
-      // If current position is before this child's start
-      if (currentPos < child.interval[0]) {
-        // Insert a new node before this child
-        insertPoints.push({
-          index: i,
-          start: currentPos,
-          end: Math.min(end, child.interval[0])
-        });
-        currentPos = Math.min(end, child.interval[0]);
-      }
       
       // If current position overlaps with this child
       if (currentPos < child.interval[1]) {
@@ -164,6 +226,8 @@ class TaggedIntervalTree {
         });
         currentPos = Math.min(end, nextChild.interval[0]);
       }
+      
+      i++;
     }
     
     // If we still have interval left after all children
@@ -175,95 +239,15 @@ class TaggedIntervalTree {
       });
     }
     
-    // Process insertion points - try to merge with existing nodes first
+    // Insert all the new nodes (in reverse order to not mess up indices)
     for (let i = insertPoints.length - 1; i >= 0; i--) {
       const point = insertPoints[i];
-      const newNode = new IntervalNode(point.start, point.end, tag);
       
-      // Check if we can merge with existing neighbors
-      let merged = false;
-      
-      // Try to merge with previous node if it has the same tag
-      if (point.index > 0) {
-        const prevNode = node.children[point.index - 1];
-        if (prevNode.tag === tag && prevNode.interval[1] >= point.start) {
-          // Extend previous node instead of creating a new one
-          prevNode.interval[1] = Math.max(prevNode.interval[1], point.end);
-          merged = true;
-          
-          // Check if this also merges with next node
-          if (point.index < node.children.length) {
-            const nextNode = node.children[point.index];
-            if (nextNode.tag === tag && prevNode.interval[1] >= nextNode.interval[0]) {
-              // Merge next node into previous node
-              prevNode.interval[1] = Math.max(prevNode.interval[1], nextNode.interval[1]);
-              // Move next node's children to previous node
-              prevNode.children.push(...nextNode.children);
-              // Remove the next node
-              node.children.splice(point.index, 1);
-            }
-          }
-          
-          continue;
-        }
-      }
-      
-      // Try to merge with next node if it has the same tag
-      if (point.index < node.children.length && !merged) {
-        const nextNode = node.children[point.index];
-        if (nextNode.tag === tag && point.end >= nextNode.interval[0]) {
-          // Extend next node instead of creating a new one
-          nextNode.interval[0] = Math.min(nextNode.interval[0], point.start);
-          merged = true;
-          continue;
-        }
-      }
-      
-      // If no merges were possible, insert the new node
-      if (!merged) {
+      // Try to merge with neighbors first
+      if (!this._tryMergeWithNeighbors(node, point.start, point.end, tag)) {
+        const newNode = new IntervalNode(point.start, point.end, tag);
         node.children.splice(point.index, 0, newNode);
       }
-    }
-    
-    // Process children to ensure tag property (child cannot have same tag as parent)
-    this._processChildrenWithSameTag(node);
-  }
-  
-  // Helper to process and remove children with same tag as parent
-  _processChildrenWithSameTag(node) {
-    if (!node || node.children.length === 0) return;
-    
-    // Check if any children have the same tag as the parent
-    const childrenToRemove = [];
-    const grandchildrenToAdd = [];
-    
-    for (let i = 0; i < node.children.length; i++) {
-      const child = node.children[i];
-      if (child.tag === node.tag) {
-        childrenToRemove.push(i);
-        // Add grandchildren that don't have the same tag
-        for (const grandchild of child.children) {
-          if (grandchild.tag !== node.tag) {
-            grandchildrenToAdd.push(grandchild);
-          }
-        }
-      }
-    }
-    
-    // Remove children with same tag (in reverse order)
-    for (let i = childrenToRemove.length - 1; i >= 0; i--) {
-      node.children.splice(childrenToRemove[i], 1);
-    }
-    
-    // Add grandchildren
-    for (const grandchild of grandchildrenToAdd) {
-      // Insert in the right position
-      let insertIndex = 0;
-      while (insertIndex < node.children.length && 
-             node.children[insertIndex].interval[0] < grandchild.interval[0]) {
-        insertIndex++;
-      }
-      node.children.splice(insertIndex, 0, grandchild);
     }
   }
   
@@ -304,8 +288,13 @@ class TaggedIntervalTree {
         const insideNodes = [];
         const afterNodes = [];
         
-        // Categorize children based on their position relative to the removal interval
-        for (const child of node.children) {
+        // Use binary search to find the division points for children
+        const startIndex = this._findInsertionPoint(node.children, effectiveStart);
+        const endIndex = this._findInsertionPoint(node.children, effectiveEnd);
+        
+        // Process children based on their position
+        for (let i = 0; i < node.children.length; i++) {
+          const child = node.children[i];
           if (child.interval[1] <= effectiveStart) {
             // Child is entirely before removal interval
             beforeNodes.push(child);
@@ -331,8 +320,7 @@ class TaggedIntervalTree {
         // Create pre-tag node (before the removal interval)
         if (effectiveStart > originalStart) {
           const preTagNode = new IntervalNode(originalStart, effectiveStart, tag);
-          preTagNode.children = [...beforeNodes]; // Clone to avoid reference issues
-          this._processChildrenWithSameTag(preTagNode);
+          preTagNode.children = beforeNodes;
           rehookNodeList.push(preTagNode);
         } else {
           // If removal starts at node start, just add before nodes to rehook list
@@ -345,16 +333,12 @@ class TaggedIntervalTree {
         // Create post-tag node (after the removal interval)
         if (effectiveEnd < originalEnd) {
           const postTagNode = new IntervalNode(effectiveEnd, originalEnd, tag);
-          postTagNode.children = [...afterNodes]; // Clone to avoid reference issues
-          this._processChildrenWithSameTag(postTagNode);
+          postTagNode.children = afterNodes;
           rehookNodeList.push(postTagNode);
         } else {
           // If removal ends at node end, just add after nodes to rehook list
           rehookNodeList.push(...afterNodes);
         }
-        
-        // Sort the rehook list by start position
-        rehookNodeList.sort((a, b) => a.interval[0] - b.interval[0]);
         
         return {
           removed: true,
@@ -369,10 +353,11 @@ class TaggedIntervalTree {
         // Adjust this node's interval to start at the end of the removal
         node.interval[0] = effectiveEnd;
         
+        // Use binary search to find children that need processing
+        const cutoffIndex = this._findInsertionPoint(node.children, effectiveEnd);
+        
         // Process any children that might be affected
         const childrenToRemove = [];
-        const childrenToAdd = [];
-        
         for (let i = 0; i < node.children.length; i++) {
           const child = node.children[i];
           if (child.interval[1] <= effectiveEnd) {
@@ -386,7 +371,8 @@ class TaggedIntervalTree {
               // Add any rehook nodes back to the node's children
               for (const rehookNode of childResult.rehookNodeList) {
                 if (rehookNode.interval[0] >= effectiveEnd) {
-                  childrenToAdd.push(rehookNode);
+                  const insertPos = this._findInsertionPoint(node.children, rehookNode.interval[0]);
+                  node.children.splice(insertPos, 0, rehookNode);
                 }
               }
             }
@@ -396,17 +382,6 @@ class TaggedIntervalTree {
         // Remove affected children (in reverse order to not mess up indices)
         for (let i = childrenToRemove.length - 1; i >= 0; i--) {
           node.children.splice(childrenToRemove[i], 1);
-        }
-        
-        // Add new children in the right positions
-        for (const childToAdd of childrenToAdd) {
-          // Find the correct insertion point
-          let insertIndex = 0;
-          while (insertIndex < node.children.length && 
-                 node.children[insertIndex].interval[0] < childToAdd.interval[0]) {
-            insertIndex++;
-          }
-          node.children.splice(insertIndex, 0, childToAdd);
         }
         
         return {
@@ -422,10 +397,11 @@ class TaggedIntervalTree {
         // Adjust this node's interval to end at the start of the removal
         node.interval[1] = effectiveStart;
         
+        // Use binary search to find children that need processing
+        const startIndex = this._findInsertionPoint(node.children, effectiveStart);
+        
         // Process any children that might be affected
         const childrenToRemove = [];
-        const childrenToAdd = [];
-        
         for (let i = 0; i < node.children.length; i++) {
           const child = node.children[i];
           if (child.interval[0] >= effectiveStart) {
@@ -439,7 +415,8 @@ class TaggedIntervalTree {
               // Add any rehook nodes back to the node's children
               for (const rehookNode of childResult.rehookNodeList) {
                 if (rehookNode.interval[1] <= effectiveStart) {
-                  childrenToAdd.push(rehookNode);
+                  const insertPos = this._findInsertionPoint(node.children, rehookNode.interval[0]);
+                  node.children.splice(insertPos, 0, rehookNode);
                 }
               }
             }
@@ -449,17 +426,6 @@ class TaggedIntervalTree {
         // Remove affected children (in reverse order to not mess up indices)
         for (let i = childrenToRemove.length - 1; i >= 0; i--) {
           node.children.splice(childrenToRemove[i], 1);
-        }
-        
-        // Add new children in the right positions
-        for (const childToAdd of childrenToAdd) {
-          // Find the correct insertion point
-          let insertIndex = 0;
-          while (insertIndex < node.children.length && 
-                 node.children[insertIndex].interval[0] < childToAdd.interval[0]) {
-            insertIndex++;
-          }
-          node.children.splice(insertIndex, 0, childToAdd);
         }
         
         return {
@@ -491,9 +457,6 @@ class TaggedIntervalTree {
           }
         }
         
-        // Sort the processed children by start position
-        processedChildren.sort((a, b) => a.interval[0] - b.interval[0]);
-        
         return {
           removed: true,
           state: 'REMOVE-ENTIRE-NODE',
@@ -505,8 +468,14 @@ class TaggedIntervalTree {
     
     // This node doesn't have the tag to remove, so process children
     let removed = false;
-    let i = 0;
     
+    // Use binary search to find children that might overlap with the removal interval
+    let startIdx = this._findInsertionPoint(node.children, effectiveStart);
+    if (startIdx > 0 && node.children[startIdx - 1].interval[1] > effectiveStart) {
+      startIdx--;
+    }
+    
+    let i = startIdx;
     while (i < node.children.length) {
       const child = node.children[i];
       
@@ -526,17 +495,18 @@ class TaggedIntervalTree {
           // Remove this child and add its rehook nodes
           node.children.splice(i, 1);
           
-          // Insert rehook nodes in sorted order
+          // Insert rehook nodes at the right positions
           if (childResult.rehookNodeList.length > 0) {
-            // Find correct insertion points for each rehook node
+            // Insert rehook nodes in sorted order
             for (const rehookNode of childResult.rehookNodeList) {
-              let insertAt = i;
-              // Find the right position by start interval
-              while (insertAt < node.children.length && 
-                     node.children[insertAt].interval[0] < rehookNode.interval[0]) {
-                insertAt++;
-              }
-              node.children.splice(insertAt, 0, rehookNode);
+              const insertPos = this._findInsertionPoint(node.children, rehookNode.interval[0]);
+              node.children.splice(insertPos, 0, rehookNode);
+            }
+            
+            // Update position for next iteration
+            i = this._findInsertionPoint(node.children, effectiveStart);
+            if (i > 0 && node.children[i - 1].interval[1] > effectiveStart) {
+              i--;
             }
           }
         } else {
@@ -591,16 +561,27 @@ class TaggedIntervalTree {
       return true;
     }
     
-    // Check children
-    for (const child of node.children) {
+    // Use binary search to find children that might overlap
+    let i = this._findInsertionPoint(node.children, start);
+    if (i > 0 && node.children[i - 1].interval[1] > start) {
+      i--;
+    }
+    
+    // Check relevant children
+    while (i < node.children.length) {
+      const child = node.children[i];
+      
       // Skip if no overlap
       if (end <= child.interval[0] || start >= child.interval[1]) {
+        i++;
         continue;
       }
       
       if (this._checkTagDFS(child, tag, start, end)) {
         return true;
       }
+      
+      i++;
     }
     
     return false;
