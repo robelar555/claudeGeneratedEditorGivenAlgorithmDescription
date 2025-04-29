@@ -1,0 +1,132 @@
+/* ALGORITHM TaggedIntervalTreeDemo
+ * DESCRIPTION: Demonstrates the operations of a TaggedIntervalTree
+ * INPUT: A text string T of length n
+ * OUTPUT: Formatted text with tags applied at specified intervals
+ */
+
+ALGORITHM TaggedIntervalTreeDemo(T)
+  Let n ← |T|
+  
+  /* Initialize a tree spanning the entire text */
+  Let Γ ← new TaggedIntervalTree(0, n)
+  
+  /* Apply formatting tags to specific intervals */
+  Γ.addTag("bold", [5, 10])        /* Bold the substring T[5:10] */
+  Γ.addTag("italic", [8, 15])      /* Italicize the substring T[8:15] */
+  Γ.addTag("underline", [12, 20])  /* Underline the substring T[12:20] */
+  
+  /* Query for tag presence in a specific interval */
+  Let β₁ ← Γ.hasTag("bold", [6, 9])    /* β₁ should be TRUE */
+  Let β₂ ← Γ.hasTag("bold", [11, 15])  /* β₂ should be FALSE */
+  
+  /* Remove a tag from a subinterval */
+  Γ.removeTag("italic", [10, 12])      /* Remove italic formatting from T[10:12] */
+  
+  /* Display the tree structure for debugging */
+  PRINT Γ.toString()
+  
+  /* Generate and return the tagged output string */
+  Let O ← Γ.getFormattedText(T)
+  RETURN O
+
+/* Tagged Interval Tree Operations */
+
+FUNCTION addTag(tag, [a, b])
+  REQUIRE: a < b
+  _addTagDFS(root, tag, a, b)
+
+FUNCTION _addTagDFS(node, tag, a, b)
+  Let [node_a, node_b] ← node.interval
+  
+  /* Constrain interval to node boundaries */
+  a ← max(a, node_a)
+  b ← min(b, node_b)
+  
+  IF a ≥ b THEN
+    RETURN  /* No valid interval */
+  
+  IF node.tag = tag THEN
+    RETURN  /* Node already has this tag */
+  
+  IF |node.children| = 0 THEN
+    /* Create new child with the tag */
+    Let child ← new IntervalNode(a, b, tag)
+    node.children.append(child)
+    RETURN
+  
+  /* Try to merge with existing nodes first */
+  IF _tryMergeWithNeighbors(node, a, b, tag) THEN
+    RETURN
+  
+  /* Process intervals not covered by children */
+  Let pos ← a
+  Let i ← BinarySearch(node.children, pos)
+  
+  WHILE pos < b DO
+    IF i < |node.children| THEN
+      Let child ← node.children[i]
+      
+      /* Handle gap before child */
+      IF pos < child.interval[0] THEN
+        Let gap_end ← min(b, child.interval[0])
+        Let new_node ← new IntervalNode(pos, gap_end, tag)
+        node.children.insert(i, new_node)
+        pos ← gap_end
+        i ← i + 1
+      
+      /* Handle overlap with child */
+      ELSE
+        _addTagDFS(child, tag, pos, b)
+        pos ← child.interval[1]
+        i ← i + 1
+    ELSE
+      /* Handle remaining interval after all children */
+      Let new_node ← new IntervalNode(pos, b, tag)
+      node.children.append(new_node)
+      pos ← b
+  
+FUNCTION removeTag(tag, [a, b])
+  REQUIRE: a < b
+  RETURN _removeTagDFS(root, tag, a, b).removed
+
+/* Note: The full _removeTagDFS algorithm is complex and follows
+ * several cases for different overlap scenarios */
+
+FUNCTION hasTag(tag, [a, b])
+  RETURN _checkTagDFS(root, tag, a, b)
+
+FUNCTION _checkTagDFS(node, tag, a, b)
+  /* Direct match at this node */
+  IF node.tag = tag AND node.interval[0] ≤ a AND node.interval[1] ≥ b THEN
+    RETURN TRUE
+  
+  /* Search in relevant children */
+  FOR EACH child IN GetOverlappingChildren(node, a, b) DO
+    IF _checkTagDFS(child, tag, a, b) THEN
+      RETURN TRUE
+  
+  RETURN FALSE
+
+FUNCTION getFormattedText(T)
+  /* Collect all tag boundaries */
+  Let M ← []  /* Array of markers */
+  CollectMarkers(root, M)
+  
+  /* Sort markers by position */
+  SORT M BY position (closing tags before opening at same position)
+  
+  /* Build result with tags inserted */
+  Let R ← ""
+  Let pos ← 0
+  
+  FOR EACH marker IN M DO
+    R ← R + T[pos:marker.position]
+    pos ← marker.position
+    
+    IF marker.isOpening THEN
+      R ← R + "<" + marker.tag + ">"
+    ELSE
+      R ← R + "</" + marker.tag + ">"
+  
+  R ← R + T[pos:]
+  RETURN R
